@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Konverter CSV ke XLSX</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{--bg:#eef2f0;--panel:#fff;--ink:#17231e;--muted:#5d6d65;--line:#cfd9d4;--accent:#1d6f42;--accent-ink:#fff;--warn:#a4372b;--head:#e3ebe7}
+  @media (prefers-color-scheme:dark){:root{--bg:#111815;--panel:#18211d;--ink:#e6eeea;--muted:#93a49b;--line:#2c3a34;--accent:#3fae74;--accent-ink:#08150e;--warn:#ef8a7c;--head:#213029}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "Segoe UI",system-ui,-apple-system,sans-serif}
+  main{max-width:960px;margin:0 auto;padding:32px 20px 56px}
+  h1{font-size:1.6rem;margin:0 0 4px;letter-spacing:-.01em}
+  .sub{color:var(--muted);margin:0 0 24px}
+  .drop{border:2px dashed var(--line);background:var(--panel);border-radius:10px;padding:36px 20px;text-align:center;cursor:pointer;transition:border-color .15s,background .15s}
+  .drop:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+  .drop.over{border-color:var(--accent);background:var(--head)}
+  .drop strong{display:block;font-size:1.05rem}
+  .drop span{color:var(--muted)}
+  input[type=file]{display:none}
+  .opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin:20px 0;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+  label{display:flex;flex-direction:column;gap:4px;font-weight:600;font-size:.9rem}
+  select,input[type=text]{font:inherit;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}
+  .check{flex-direction:row;align-items:flex-start;gap:8px;font-weight:400}
+  .check input{margin-top:4px}
+  .check small{display:block;color:var(--muted)}
+  .bar{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-bottom:14px}
+  button{font:inherit;font-weight:600;padding:10px 18px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);cursor:pointer}
+  button.ghost{background:transparent;color:var(--ink);border-color:var(--line)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+  .info{color:var(--muted)}
+  .err{color:var(--warn);font-weight:600;margin:12px 0}
+  .wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--panel);max-height:420px}
+  table{border-collapse:collapse;width:100%;font-size:.86rem}
+  th,td{padding:6px 10px;border-bottom:1px solid var(--line);border-right:1px solid var(--line);text-align:left;white-space:nowrap;max-width:280px;overflow:hidden;text-overflow:ellipsis}
+  th{background:var(--head);position:sticky;top:0}
+  td.n,th.n{background:var(--head);color:var(--muted);text-align:right;width:1%}
+  [hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+  <h1>Konverter CSV ke XLSX</h1>
+  <p class="sub">Semua proses berjalan di browser Anda. File tidak diunggah ke server mana pun.</p>
+
+  <div class="drop" id="drop" tabindex="0" role="button" aria-label="Pilih file CSV">
+    <strong>Tarik file CSV ke sini atau klik untuk memilih</strong>
+    <span>Mendukung .csv, .tsv, dan .txt</span>
+    <input type="file" id="file" accept=".csv,.tsv,.txt,text/csv,text/plain">
+  </div>
+
+  <div class="opts" id="opts" hidden>
+    <label>Pemisah kolom
+      <select id="delim">
+        <option value="auto">Deteksi otomatis</option>
+        <option value=",">Koma (,)</option>
+        <option value=";">Titik koma (;)</option>
+        <option value="&#9;">Tab</option>
+        <option value="|">Pipa (|)</option>
+      </select>
+    </label>
+    <label>Encoding
+      <select id="enc">
+        <option value="UTF-8">UTF-8</option>
+        <option value="windows-1252">Windows-1252</option>
+        <option value="ISO-8859-1">ISO-8859-1</option>
+        <option value="UTF-16LE">UTF-16 LE</option>
+      </select>
+    </label>
+    <label>Nama sheet
+      <input type="text" id="sheet" value="Sheet1" maxlength="31">
+    </label>
+    <label class="check">
+      <input type="checkbox" id="typed">
+      <span>Ubah angka dan tanggal otomatis<small>Jika mati, semua sel tetap teks sehingga nol di depan (mis. 00123) tidak hilang.</small></span>
+    </label>
+  </div>
+
+  <div id="err" class="err" role="alert" hidden></div>
+
+  <div class="bar" id="bar" hidden>
+    <button id="convert">Unduh XLSX</button>
+    <button id="reset" class="ghost">Ganti file</button>
+    <span class="info" id="info"></span>
+  </div>
+
+  <div class="wrap" id="wrap" hidden><table id="preview"></table></div>
+</main>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var state = { file: null, buffer: null, wb: null };
+  var PREVIEW_ROWS = 50;
+
+  function showError(msg) { var e = $('err'); e.textContent = msg || ''; e.hidden = !msg; }
+
+  function detectDelimiter(text) {
+    var lines = text.split(/\r?\n/).slice(0, 5).filter(Boolean);
+    var cands = [',', ';', '\t', '|'], best = ',', bestScore = -1;
+    cands.forEach(function (d) {
+      var counts = lines.map(function (l) { return l.split(d).length - 1; });
+      if (!counts.length || counts[0] === 0) return;
+      var consistent = counts.every(function (c) { return c === counts[0]; });
+      var score = counts[0] * (consistent ? 2 : 1);
+      if (score > bestScore) { bestScore = score; best = d; }
+    });
+    return best;
+  }
+
+  function decode() {
+    var enc = $('enc').value;
+    try {
+      var text = new TextDecoder(enc).decode(state.buffer);
+      return text.replace(/^\uFEFF/, '');
+    } catch (e) { throw new Error('Encoding tidak didukung browser ini: ' + enc); }
+  }
+
+  function parse() {
+    showError('');
+    if (!state.buffer) return;
+    try {
+      var text = decode();
+      if (!text.trim()) throw new Error('File kosong.');
+      var d = $('delim').value;
+      if (d === 'auto') d = detectDelimiter(text);
+      var typed = $('typed').checked;
+      // raw:true => semua sel tetap string (nol di depan aman)
+      state.wb = XLSX.read(text, { type: 'string', FS: d, raw: !typed, cellDates: typed });
+      renderPreview();
+    } catch (e) {
+      state.wb = null;
+      $('wrap').hidden = true;
+      $('convert').disabled = true;
+      showError('Gagal membaca file: ' + e.message);
+    }
+  }
+
+  function esc(v) {
+    return String(v == null ? '' : v).replace(/[&<>"]/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+
+  function renderPreview() {
+    var ws = state.wb.Sheets[state.wb.SheetNames[0]];
+    var rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
+    var cols = rows.reduce(function (m, r) { return Math.max(m, r.length); }, 0);
+    var html = '<thead><tr><th class="n"></th>';
+    for (var c = 0; c < cols; c++) html += '<th>' + XLSX.utils.encode_col(c) + '</th>';
+    html += '</tr></thead><tbody>';
+    rows.slice(0, PREVIEW_ROWS).forEach(function (r, i) {
+      html += '<tr><td class="n">' + (i + 1) + '</td>';
+      for (var c = 0; c < cols; c++) html += '<td title="' + esc(r[c]) + '">' + esc(r[c]) + '</td>';
+      html += '</tr>';
+    });
+    $('preview').innerHTML = html + '</tbody>';
+    $('wrap').hidden = false;
+    $('convert').disabled = false;
+    var shown = Math.min(rows.length, PREVIEW_ROWS);
+    $('info').textContent = rows.length + ' baris, ' + cols + ' kolom. Pratinjau menampilkan ' + shown + ' baris pertama.';
+  }
+
+  function loadFile(file) {
+    if (!file) return;
+    showError('');
+    var reader = new FileReader();
+    reader.onerror = function () { showError('File tidak dapat dibaca.'); };
+    reader.onload = function () {
+      state.file = file;
+      state.buffer = reader.result;
+      $('sheet').value = 'Sheet1';
+      $('opts').hidden = false;
+      $('bar').hidden = false;
+      $('drop').hidden = true;
+      parse();
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function download() {
+    if (!state.wb) return;
+    var name = ($('sheet').value || 'Sheet1').replace(/[\\\/?*\[\]:]/g, '_').slice(0, 31);
+    var src = state.wb.Sheets[state.wb.SheetNames[0]];
+    var out = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(out, src, name);
+    var base = state.file.name.replace(/\.[^.]+$/, '') || 'hasil';
+    XLSX.writeFile(out, base + '.xlsx');
+  }
+
+  function reset() {
+    state = { file: null, buffer: null, wb: null };
+    $('file').value = '';
+    $('drop').hidden = false;
+    ['opts', 'bar', 'wrap'].forEach(function (id) { $(id).hidden = true; });
+    showError('');
+  }
+
+  var drop = $('drop');
+  drop.addEventListener('click', function () { $('file').click(); });
+  drop.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('file').click(); } });
+  ['dragenter', 'dragover'].forEach(function (t) { drop.addEventListener(t, function (e) { e.preventDefault(); drop.classList.add('over'); }); });
+  ['dragleave', 'drop'].forEach(function (t) { drop.addEventListener(t, function (e) { e.preventDefault(); drop.classList.remove('over'); }); });
+  drop.addEventListener('drop', function (e) { loadFile(e.dataTransfer.files[0]); });
+  $('file').addEventListener('change', function (e) { loadFile(e.target.files[0]); });
+  ['delim', 'enc', 'typed'].forEach(function (id) { $(id).addEventListener('change', parse); });
+  $('convert').addEventListener('click', download);
+  $('reset').addEventListener('click', reset);
+
+  if (typeof XLSX === 'undefined') showError('Library SheetJS gagal dimuat. Periksa koneksi internet lalu muat ulang halaman.');
+})();
+</script>
+</body>
+</html>

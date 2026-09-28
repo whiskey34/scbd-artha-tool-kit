@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Konverter Excel/CSV ke SQL PostgreSQL</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{--bg:#eef2f0;--panel:#fff;--ink:#17231e;--muted:#5d6d65;--line:#cfd9d4;--accent:#1d6f42;--ai:#fff;--warn:#a4372b;--head:#e3ebe7}
+@media (prefers-color-scheme:dark){:root{--bg:#111815;--panel:#18211d;--ink:#e6eeea;--muted:#93a49b;--line:#2c3a34;--accent:#3fae74;--ai:#08150e;--warn:#ef8a7c;--head:#213029}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "Segoe UI",system-ui,-apple-system,sans-serif}
+main{max-width:1040px;margin:0 auto;padding:32px 20px 56px}
+h1{font-size:1.6rem;margin:0 0 4px}h2{font-size:1.05rem;margin:26px 0 8px}
+.sub,.note{color:var(--muted);margin:0 0 20px}.note{font-size:.85rem;margin:6px 0 0}
+.drop{border:2px dashed var(--line);background:var(--panel);border-radius:10px;padding:36px 20px;text-align:center;cursor:pointer}
+.drop:focus-visible,button:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.drop.over{border-color:var(--accent);background:var(--head)}
+.drop strong{display:block;font-size:1.05rem}.drop span{color:var(--muted)}
+input[type=file]{display:none}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px}
+label{display:flex;flex-direction:column;gap:4px;font-weight:600;font-size:.9rem}
+label.ck{flex-direction:row;align-items:center;gap:8px;font-weight:400}
+select,input[type=text],input[type=number]{font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);width:100%}
+button{font:inherit;font-weight:600;padding:9px 16px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:var(--ai);cursor:pointer}
+button.g{background:transparent;color:var(--ink);border-color:var(--line)}
+button.s{padding:5px 10px;font-size:.85rem}
+.wrap{overflow-x:auto;border:1px solid var(--line);border-radius:10px;background:var(--panel)}
+table{border-collapse:collapse;width:100%;font-size:.86rem}
+th,td{padding:5px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+th{background:var(--head)}td.ex,td.n{color:var(--muted);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:14px 0}
+.err{color:var(--warn);font-weight:600;margin:10px 0}.info{color:var(--muted)}
+textarea{width:100%;height:340px;font:12.5px/1.45 ui-monospace,Consolas,monospace;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink);resize:vertical}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+<h1>Konverter Excel/CSV ke SQL PostgreSQL</h1>
+<p class="sub">Semua proses berjalan di browser Anda. File tidak diunggah ke server mana pun.</p>
+
+<div class="drop" id="drop" tabindex="0" role="button" aria-label="Pilih file">
+  <strong>Tarik file ke sini atau klik untuk memilih</strong>
+  <span>Mendukung .xlsx, .xls, .csv, .tsv, dan .txt</span>
+  <input type="file" id="file" accept=".xlsx,.xls,.csv,.tsv,.txt">
+</div>
+<div id="err" class="err" role="alert" hidden></div>
+
+<div id="work" hidden>
+  <h2>Sumber data</h2>
+  <div class="card" id="opts">
+    <div class="grid">
+      <label>Sheet<select id="sheet"></select></label>
+      <label>Baris header<input type="number" id="hrow" min="1" value="1"></label>
+      <label>Schema (opsional)<input type="text" id="schema" placeholder="public"></label>
+      <label>Nama tabel<input type="text" id="table"></label>
+      <label>Baris per INSERT<input type="number" id="batch" min="1" value="500"></label>
+    </div>
+    <div class="grid" style="margin-top:12px">
+      <label class="ck"><input type="checkbox" id="nohead">Tanpa header (data mulai di baris tersebut)</label>
+      <label class="ck"><input type="checkbox" id="create">Sertakan CREATE TABLE IF NOT EXISTS</label>
+      <label class="ck"><input type="checkbox" id="pk" checked>Tambah id BIGSERIAL PRIMARY KEY (hanya untuk CREATE TABLE)</label>
+    </div>
+    <p class="note">Baris kosong dibuang otomatis. Sel kosong menjadi NULL. Pilih baris header sesuai nomor baris di pratinjau.</p>
+  </div>
+  <h2>Pratinjau sheet</h2>
+  <div class="wrap"><table id="pv"></table></div>
+
+  <h2>Pemetaan kolom</h2>
+  <div class="wrap"><table id="map"></table></div>
+  <p class="note">Kolom yang dicentang "Kunci duplikat" dipakai untuk melewati baris yang sudah ada (INSERT ... WHERE NOT EXISTS). Pada tabel besar, buat indeks pada kolom tersebut agar cepat.</p>
+
+  <h2>Kolom nilai tetap</h2>
+  <div class="wrap"><table id="fixed"></table></div>
+  <div class="bar">
+    <button class="g s" id="addfix">Tambah kolom</button>
+    <button class="g s" id="clrfix">Hapus semua</button>
+    <input type="text" id="tname" placeholder="Nama template" style="max-width:180px">
+    <button class="g s" id="tsave">Simpan template</button>
+    <select id="tload" style="max-width:180px"><option value="">Muat template...</option></select>
+  </div>
+  <p class="note">Nilai ditulis apa adanya sebagai ekspresi SQL (contoh: 1, NOW(), NULL, 'aktif'). Isian awal mengikuti skrip brands Anda. Kosongkan atau ubah untuk tabel lain.</p>
+
+  <h2>Hasil SQL</h2>
+  <div class="bar">
+    <button id="copy">Salin SQL</button>
+    <button id="dl">Unduh .sql</button>
+    <button class="g" id="reset">Ganti file</button>
+    <span class="info" id="info"></span>
+  </div>
+  <textarea id="out" readonly spellcheck="false"></textarea>
+</div>
+</main>
+
+<script>
+(function(){
+var $=function(i){return document.getElementById(i)};
+var TYPES=['TEXT','INTEGER','BIGINT','NUMERIC','BOOLEAN','DATE','TIMESTAMP','TIMESTAMPTZ'];
+var RES=new Set('all analyse analyze and any array as asc both case cast check collate column constraint create current_date current_time current_timestamp current_user default deferrable desc distinct do else end except false fetch for foreign from grant group having in initially intersect into leading limit localtime localtimestamp not null offset on only or order placing primary references returning select session_user some symmetric table then to trailing true union unique user using variadic when where window with'.split(' '));
+var FIX0=[['status','INTEGER','1'],['created_at','TIMESTAMPTZ','NOW()'],['created_by','INTEGER','1'],['updated_at','TIMESTAMPTZ','NOW()'],['updated_by','INTEGER','1'],['deleted_at','TIMESTAMPTZ','NULL'],['deleted_by','INTEGER','NULL']];
+var S={file:'',wb:null,rows:[],data:[],cols:[],fixed:[],sql:''},bad=0,tm=null;
+
+function esc(v){return String(v==null?'':v).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+function snake(s){return String(s==null?'':s).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'')}
+function ident(n){return /^[a-z_][a-z0-9_]*$/.test(n)&&!RES.has(n)?n:'"'+n.replace(/"/g,'""')+'"'}
+function err(m){$('err').textContent=m||'';$('err').hidden=!m}
+function pad(n){return(n<10?'0':'')+n}
+function cell(v){
+  if(v==null)return null;
+  if(v instanceof Date){if(isNaN(v))return null;var d=v.getFullYear()+'-'+pad(v.getMonth()+1)+'-'+pad(v.getDate()),t=pad(v.getHours())+':'+pad(v.getMinutes())+':'+pad(v.getSeconds());return t==='00:00:00'?d:d+' '+t}
+  if(typeof v==='boolean')return v?'true':'false';
+  var s=String(v).trim();return s===''?null:s;
+}
+function detect(t){
+  var L=t.split(/\r?\n/).slice(0,5).filter(Boolean),best=',',bs=-1;
+  [',',';','\t','|'].forEach(function(d){var c=L.map(function(l){return l.split(d).length-1});if(!c.length||!c[0])return;var s=c[0]*(c.every(function(x){return x===c[0]})?2:1);if(s>bs){bs=s;best=d}});
+  return best;
+}
+function kind(v){
+  if(/^(true|false)$/i.test(v))return'BOOLEAN';
+  if(/^-?(0|[1-9]\d*)$/.test(v))return Math.abs(+v)>2147483647?'BIGINT':'INTEGER';
+  if(/^-?(0|[1-9]\d*)\.\d+$/.test(v))return'NUMERIC';
+  if(/^\d{4}-\d{2}-\d{2}$/.test(v))return'DATE';
+  if(/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(:\d{2})?$/.test(v))return'TIMESTAMP';
+  return'TEXT';
+}
+function guess(i){
+  var k={},n=0;
+  S.data.forEach(function(r){var v=r[i];if(v!=null){k[kind(v)]=1;n++}});
+  if(!n||k.TEXT)return'TEXT';
+  var has=function(a){return a.some(function(x){return k[x]})},only=function(a){return Object.keys(k).every(function(x){return a.indexOf(x)>-1})};
+  if(only(['INTEGER','BIGINT','NUMERIC']))return k.NUMERIC?'NUMERIC':(k.BIGINT?'BIGINT':'INTEGER');
+  if(only(['DATE','TIMESTAMP']))return k.TIMESTAMP?'TIMESTAMP':'DATE';
+  if(only(['BOOLEAN']))return'BOOLEAN';
+  return'TEXT';
+}
+
+function load(file){
+  err('');
+  var r=new FileReader(),csv=/\.(csv|tsv|txt)$/i.test(file.name);
+  r.onerror=function(){err('File tidak dapat dibaca.')};
+  r.onload=function(){
+    try{
+      var wb;
+      if(csv){var t=new TextDecoder('utf-8').decode(r.result).replace(/^\uFEFF/,'');if(!t.trim())throw new Error('File kosong.');wb=XLSX.read(t,{type:'string',FS:detect(t),raw:true})}
+      else wb=XLSX.read(r.result,{type:'array',cellDates:true});
+      S.file=file.name;S.wb=wb;
+      $('sheet').innerHTML=wb.SheetNames.map(function(n,i){return'<option value="'+i+'">'+esc(n)+'</option>'}).join('');
+      $('table').value=snake(file.name.replace(/\.[^.]+$/,''));
+      S.fixed=FIX0.map(function(f){return{n:f[0],t:f[1],v:f[2]}});
+      $('drop').hidden=true;$('work').hidden=false;
+      setSheet();
+    }catch(e){err('Gagal membaca file: '+e.message)}
+  };
+  r.readAsArrayBuffer(file);
+}
+
+function setSheet(){
+  var ws=S.wb.Sheets[S.wb.SheetNames[+$('sheet').value]];
+  S.rows=XLSX.utils.sheet_to_json(ws,{header:1,raw:true,defval:null,blankrows:true}).map(function(r){return r.map(cell)});
+  var f=0;while(f<S.rows.length&&!S.rows[f].some(function(v){return v!==null}))f++;
+  $('hrow').value=f+1;
+  build();
+}
+
+function build(){
+  var h=Math.max(1,+$('hrow').value||1),nh=$('nohead').checked;
+  var head=nh?[]:(S.rows[h-1]||[]);
+  S.data=S.rows.slice(nh?h-1:h).filter(function(r){return r.some(function(v){return v!==null})});
+  var n=head.length;S.data.forEach(function(r){if(r.length>n)n=r.length});
+  var used={};S.cols=[];
+  for(var i=0;i<n;i++){
+    var has=head[i]!=null||S.data.some(function(r){return r[i]!=null});
+    if(!has)continue;
+    var nm=(!nh&&snake(head[i]))||'kolom_'+(i+1),b=nm,c=2;
+    while(used[nm])nm=b+'_'+(c++);used[nm]=1;
+    var ex=null;for(var k=0;k<S.data.length;k++){if(S.data[k][i]!=null){ex=S.data[k][i];break}}
+    S.cols.push({i:i,src:(!nh&&head[i])||XLSX.utils.encode_col(i),ex:ex,name:nm,type:guess(i),on:true,key:false});
+  }
+  renderPv();renderMap();renderFix();gen();
+}
+
+function renderPv(){
+  var w=0,rows=S.rows.slice(0,12);rows.forEach(function(r){if(r.length>w)w=r.length});w=Math.min(w,12);
+  var h='<tbody>';
+  rows.forEach(function(r,i){h+='<tr><td class="n">'+(i+1)+'</td>';for(var c=0;c<w;c++)h+='<td class="ex" title="'+esc(r[c])+'">'+esc(r[c])+'</td>';h+='</tr>'});
+  $('pv').innerHTML=h+'</tbody>';
+}
+function renderMap(){
+  $('map').innerHTML='<thead><tr><th>Kolom Excel</th><th>Contoh nilai</th><th>Nama kolom DB</th><th>Tipe</th><th>Pakai</th><th>Kunci duplikat</th></tr></thead><tbody>'+
+  S.cols.map(function(c,j){
+    return'<tr><td>'+esc(c.src)+'</td><td class="ex" title="'+esc(c.ex)+'">'+esc(c.ex)+'</td>'+
+    '<td><input type="text" data-m="'+j+'" data-f="name" value="'+esc(c.name)+'"></td>'+
+    '<td><select data-m="'+j+'" data-f="type">'+TYPES.map(function(t){return'<option'+(t===c.type?' selected':'')+'>'+t+'</option>'}).join('')+'</select></td>'+
+    '<td><input type="checkbox" data-m="'+j+'" data-f="on"'+(c.on?' checked':'')+'></td>'+
+    '<td><input type="checkbox" data-m="'+j+'" data-f="key"'+(c.key?' checked':'')+'></td></tr>';
+  }).join('')+'</tbody>';
+}
+function renderFix(){
+  $('fixed').innerHTML='<thead><tr><th>Nama kolom</th><th>Tipe (untuk CREATE TABLE)</th><th>Nilai (ekspresi SQL)</th><th></th></tr></thead><tbody>'+
+  S.fixed.map(function(f,j){
+    return'<tr><td><input type="text" data-x="'+j+'" data-f="n" value="'+esc(f.n)+'"></td>'+
+    '<td><select data-x="'+j+'" data-f="t">'+TYPES.concat(['VARCHAR(255)']).map(function(t){return'<option'+(t===f.t?' selected':'')+'>'+t+'</option>'}).join('')+'</select></td>'+
+    '<td><input type="text" data-x="'+j+'" data-f="v" value="'+esc(f.v)+'"></td>'+
+    '<td><button class="g s" data-rm="'+j+'">Hapus</button></td></tr>';
+  }).join('')+'</tbody>';
+}
+
+function lit(v,t){
+  if(v==null)return'NULL';
+  var s=String(v),l;
+  if(t==='INTEGER'||t==='BIGINT'){if(/^-?\d+$/.test(s))return s;bad++}
+  else if(t==='NUMERIC'){if(/^-?\d+(\.\d+)?$/.test(s))return s;bad++}
+  else if(t==='BOOLEAN'){l=s.toLowerCase();if(/^(true|t|yes|1)$/.test(l))return'true';if(/^(false|f|no|0)$/.test(l))return'false';bad++}
+  return"'"+s.replace(/'/g,"''")+"'";
+}
+
+function gen(){
+  bad=0;
+  var cols=S.cols.filter(function(c){return c.on&&c.name.trim()}),
+      fx=S.fixed.filter(function(f){return snake(f.n)&&f.v.trim()}),
+      tb=snake($('table').value),sch=snake($('schema').value);
+  if(!tb){$('out').value='-- Isi nama tabel terlebih dahulu.';S.sql='';$('info').textContent='';return}
+  var T=(sch?ident(sch)+'.':'')+ident(tb),
+      nm=cols.map(function(c){return ident(snake(c.name)||'kolom_'+(c.i+1))}).concat(fx.map(function(f){return ident(snake(f.n))})),
+      seen={},dup=nm.filter(function(n){var d=seen[n];seen[n]=1;return d}),
+      fv=fx.map(function(f){return f.v.trim()}),
+      L=['-- Sumber: '+S.file+' ('+S.data.length+' baris data)','BEGIN;',''],
+      list='('+nm.join(', ')+')',keys=cols.filter(function(c){return c.key});
+  if(!cols.length){$('out').value='-- Pilih minimal satu kolom.';S.sql='';return}
+  if($('create').checked){
+    var defs=[];if($('pk').checked)defs.push('  id BIGSERIAL PRIMARY KEY');
+    cols.forEach(function(c,k){defs.push('  '+nm[k]+' '+c.type)});
+    fx.forEach(function(f,k){defs.push('  '+nm[cols.length+k]+' '+f.t)});
+    L.push('CREATE TABLE IF NOT EXISTS '+T+' (',defs.join(',\n'),');','');
+  }
+  if(keys.length){
+    S.data.forEach(function(r){
+      var ls=cols.map(function(c){return lit(r[c.i],c.type)});
+      var cond=cols.map(function(c,k){return c.key?'x.'+nm[k]+(ls[k]==='NULL'?' IS NULL':' = '+ls[k]):null}).filter(Boolean).join(' AND ');
+      L.push('INSERT INTO '+T+' '+list+' SELECT '+ls.concat(fv).join(', ')+' WHERE NOT EXISTS (SELECT 1 FROM '+T+' x WHERE '+cond+');');
+    });
+    L.push('');
+  }else{
+    var B=Math.max(1,+$('batch').value||500);
+    for(var k=0;k<S.data.length;k+=B){
+      var ch=S.data.slice(k,k+B).map(function(r){return'  ('+cols.map(function(c){return lit(r[c.i],c.type)}).concat(fv).join(', ')+')'});
+      L.push('INSERT INTO '+T+' '+list+' VALUES',ch.join(',\n')+';','');
+    }
+  }
+  L.push('COMMIT;');
+  S.sql=L.join('\n');
+  var lines=S.sql.split('\n');
+  $('out').value=lines.length>300?lines.slice(0,300).join('\n')+'\n-- ... pratinjau dipotong. Gunakan Salin atau Unduh untuk hasil lengkap.':S.sql;
+  var m=S.data.length+' baris, '+cols.length+' kolom + '+fx.length+' kolom tetap.';
+  if(bad)m+=' '+bad+' sel tidak cocok dengan tipenya dan akan error saat dijalankan; ubah tipe kolomnya.';
+  if(dup.length)m+=' Nama kolom ganda: '+dup.join(', ')+'.';
+  $('info').textContent=m;
+}
+function later(){clearTimeout(tm);tm=setTimeout(gen,200)}
+
+document.addEventListener('input',function(e){
+  var t=e.target,f=t.dataset.f,v=t.type==='checkbox'?t.checked:t.value;
+  if(t.dataset.m!=null){S.cols[+t.dataset.m][f]=v;later()}
+  else if(t.dataset.x!=null){S.fixed[+t.dataset.x][f]=v;later()}
+  else if(t.id==='hrow'){clearTimeout(tm);tm=setTimeout(build,300)}
+  else if(['table','schema','batch','create','pk'].indexOf(t.id)>-1)later();
+});
+document.addEventListener('change',function(e){
+  var t=e.target;
+  if(t.id==='sheet')setSheet();
+  else if(t.id==='nohead')build();
+  else if(t.id==='tload')loadTpl();
+  else if(t.dataset.m!=null||t.dataset.x!=null)gen();
+});
+document.addEventListener('click',function(e){
+  var t=e.target;
+  if(t.dataset.rm!=null){S.fixed.splice(+t.dataset.rm,1);renderFix();gen()}
+});
+$('addfix').onclick=function(){S.fixed.push({n:'',t:'TEXT',v:''});renderFix()};
+$('clrfix').onclick=function(){S.fixed=[];renderFix();gen()};
+
+function tpls(){try{return JSON.parse(localStorage.getItem('xl2sql.tpl')||'{}')}catch(e){return{}}}
+function fillTpl(){$('tload').innerHTML='<option value="">Muat template...</option>'+Object.keys(tpls()).map(function(n){return'<option>'+esc(n)+'</option>'}).join('')}
+$('tsave').onclick=function(){
+  var n=$('tname').value.trim();if(!n)return err('Isi nama template terlebih dahulu.');
+  try{var a=tpls();a[n]={fixed:S.fixed,schema:$('schema').value,create:$('create').checked,pk:$('pk').checked,batch:$('batch').value};localStorage.setItem('xl2sql.tpl',JSON.stringify(a));err('');fillTpl();$('tload').value=n}
+  catch(e){err('Template tidak dapat disimpan di browser ini.')}
+};
+function loadTpl(){
+  var t=tpls()[$('tload').value];if(!t)return;
+  S.fixed=t.fixed;$('schema').value=t.schema;$('create').checked=t.create;$('pk').checked=t.pk;$('batch').value=t.batch;
+  $('tname').value=$('tload').value;renderFix();gen();
+}
+
+function copy(){
+  if(!S.sql)return;
+  var ok=function(){$('info').textContent='SQL disalin ke clipboard.'};
+  var fb=function(){var a=document.createElement('textarea');a.value=S.sql;document.body.appendChild(a);a.select();try{document.execCommand('copy');ok()}catch(e){err('Salin gagal. Gunakan Unduh.')}a.remove()};
+  if(navigator.clipboard)navigator.clipboard.writeText(S.sql).then(ok,fb);else fb();
+}
+$('copy').onclick=copy;
+$('dl').onclick=function(){
+  if(!S.sql)return;
+  var a=document.createElement('a');a.href=URL.createObjectURL(new Blob([S.sql],{type:'text/plain;charset=utf-8'}));
+  a.download=(snake($('table').value)||'output')+'.sql';document.body.appendChild(a);a.click();a.remove();
+};
+$('reset').onclick=function(){S.wb=null;$('file').value='';$('work').hidden=true;$('drop').hidden=false;err('')};
+
+var d=$('drop');
+d.onclick=function(){$('file').click()};
+d.onkeydown=function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();$('file').click()}};
+['dragenter','dragover'].forEach(function(t){d.addEventListener(t,function(e){e.preventDefault();d.classList.add('over')})});
+['dragleave','drop'].forEach(function(t){d.addEventListener(t,function(e){e.preventDefault();d.classList.remove('over')})});
+d.addEventListener('drop',function(e){if(e.dataTransfer.files[0])load(e.dataTransfer.files[0])});
+$('file').onchange=function(e){if(e.target.files[0])load(e.target.files[0])};
+fillTpl();
+if(typeof XLSX==='undefined')err('Library SheetJS gagal dimuat. Periksa koneksi internet lalu muat ulang halaman.');
+})();
+</script>
+</body>
+</html>
