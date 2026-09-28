@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Decoder JWT dan Cookie</title>
+<style>
+:root{--bg:#eef2f0;--panel:#fff;--ink:#17231e;--muted:#5d6d65;--line:#cfd9d4;--accent:#1d6f42;--ai:#fff;--warn:#a4372b;--head:#e3ebe7;--amber:#b7791f}
+@media (prefers-color-scheme:dark){:root{--bg:#111815;--panel:#18211d;--ink:#e6eeea;--muted:#93a49b;--line:#2c3a34;--accent:#3fae74;--ai:#08150e;--warn:#ef8a7c;--head:#213029;--amber:#e0b04a}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "Segoe UI",system-ui,-apple-system,sans-serif}
+main{max-width:980px;margin:0 auto;padding:32px 20px 56px}
+h1{font-size:1.6rem;margin:0 0 4px}h3{margin:0 0 6px;font-size:1.05rem;word-break:break-all}h4{margin:14px 0 6px}h5{margin:12px 0 4px;font-size:.9rem;color:var(--muted)}
+.sub,.note{color:var(--muted);margin:0 0 18px}.note{font-size:.85rem;margin:6px 0 0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;margin-top:16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px;margin-top:14px}
+label{display:flex;flex-direction:column;gap:4px;font-weight:600;font-size:.9rem}
+label.ck{flex-direction:row;align-items:center;gap:8px;font-weight:400}
+textarea,input[type=text],input[type=password]{font:13px/1.45 ui-monospace,Consolas,monospace;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);width:100%}
+textarea{resize:vertical}
+button{font:inherit;font-weight:600;padding:8px 16px;border-radius:6px;border:1px solid var(--accent);background:var(--accent);color:var(--ai);cursor:pointer}
+button.g{background:transparent;color:var(--ink);border-color:var(--line)}
+button:focus-visible,summary:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.bar{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap}
+pre{margin:0;padding:10px 12px;background:var(--bg);border:1px solid var(--line);border-radius:6px;overflow-x:auto;font:12.5px/1.45 ui-monospace,Consolas,monospace;white-space:pre-wrap;word-break:break-all}
+table{border-collapse:collapse;width:100%;font-size:.86rem}
+td,th{padding:5px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top;word-break:break-all}
+th{width:150px;color:var(--muted);font-weight:600}
+.l{border-left:4px solid var(--line);padding:4px 10px;margin:6px 0;background:var(--head);border-radius:0 6px 6px 0}
+.ok{border-color:var(--accent)}.bad{border-color:var(--warn)}.wn{border-color:var(--amber)}
+details summary{cursor:pointer;font-weight:600}
+</style>
+</head>
+<body>
+<main>
+<h1>Decoder JWT dan Cookie</h1>
+<p class="sub">Tempel JWT, header Cookie, atau baris Set-Cookie. Semua proses berjalan di browser Anda dan kunci tidak dikirim ke mana pun.</p>
+
+<div class="card">
+  <label>Input (boleh lebih dari satu baris)
+    <textarea id="in" rows="6" spellcheck="false" placeholder="eyJhbGciOi...&#10;Cookie: laravel_session=eyJpdiI6...; token=eyJhbGciOi...&#10;Set-Cookie: token=eyJ...; Domain=.contoh.com; Path=/; Secure; HttpOnly; SameSite=None"></textarea>
+  </label>
+  <div class="grid">
+    <label>Secret JWT (HS256/384/512)<input type="password" id="secret" autocomplete="off"></label>
+    <label>APP_KEY Laravel (untuk cookie terenkripsi)<input type="password" id="appkey" placeholder="base64:..." autocomplete="off"></label>
+    <label>Host yang harus menerima cookie<input type="text" id="host" placeholder="app.contoh.com"></label>
+  </div>
+  <div class="grid">
+    <label class="ck"><input type="checkbox" id="secb64">Secret berformat base64</label>
+  </div>
+  <details style="margin-top:12px"><summary>Public key untuk RS/ES256/384/512 (format PEM "BEGIN PUBLIC KEY")</summary>
+    <textarea id="pem" rows="5" spellcheck="false" style="margin-top:8px"></textarea>
+  </details>
+  <div class="bar"><button id="run">Decode</button><button class="g" id="sample">Isi contoh</button><button class="g" id="clear">Hapus</button></div>
+  <p class="note">Jangan menempel token atau kunci produksi ke alat online lain. File ini tidak butuh internet dan tidak menyimpan apa pun.</p>
+</div>
+
+<div id="res"></div>
+</main>
+
+<script>
+(function(){
+var $=function(i){return document.getElementById(i)};
+var enc=new TextEncoder(),dec=new TextDecoder(),tm=null;
+var JWT_RE=/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*$/;
+var ATTR=/^(domain|path|expires|max-age|samesite|secure|httponly|partitioned|priority)$/i;
+
+function esc(v){return String(v==null?'':v).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+function b64(s){s=String(s).replace(/-/g,'+').replace(/_/g,'/').replace(/\s/g,'');while(s.length%4)s+='=';var b=atob(s),u=new Uint8Array(b.length);for(var i=0;i<b.length;i++)u[i]=b.charCodeAt(i);return u}
+function txt(u){return dec.decode(u)}
+function hex(b){return Array.from(new Uint8Array(b)).map(function(x){return('0'+x.toString(16)).slice(-2)}).join('')}
+function safeDec(s){try{return decodeURIComponent(s)}catch(e){return s}}
+function line(c,t){return'<p class="l '+c+'">'+esc(t)+'</p>'}
+function kv(rows){return'<table>'+rows.map(function(r){return'<tr><th>'+esc(r[0])+'</th><td>'+esc(r[1])+'</td></tr>'}).join('')+'</table>'}
+function rel(ms){var a=Math.abs(ms)/1000,u=a<60?[a,'detik']:a<3600?[a/60,'menit']:a<86400?[a/3600,'jam']:[a/86400,'hari'];return Math.floor(u[0])+' '+u[1]+(ms<0?' lalu':' lagi')}
+function needSubtle(){return window.crypto&&crypto.subtle}
+
+function parse(text){
+  var items=[];
+  text.split(/\r?\n/).forEach(function(line){
+    line=line.trim();if(!line)return;
+    var setc=/^set-cookie:/i.test(line);
+    line=line.replace(/^(set-cookie|cookie|authorization):\s*/i,'').replace(/^bearer\s+/i,'');
+    if(JWT_RE.test(line)){items.push({name:null,raw:line});return}
+    var pairs=line.split(/;\s*/).filter(Boolean).map(function(p){var i=p.indexOf('=');return i<0?[p,'']:[p.slice(0,i),p.slice(i+1)]});
+    if(!pairs.length)return;
+    if(pairs.length===1&&(pairs[0][1]===''||/^=*$/.test(pairs[0][1]))){items.push({name:null,raw:line});return}
+    var hasAttr=pairs.slice(1).some(function(p){return ATTR.test(p[0].trim())});
+    if(setc||hasAttr){
+      var a={};pairs.slice(1).forEach(function(p){a[p[0].trim().toLowerCase()]=p[1]});
+      items.push({name:pairs[0][0].trim(),raw:pairs[0][1],attrs:a});
+    }else pairs.forEach(function(p){items.push({name:p[0].trim(),raw:p[1]})});
+  });
+  return items;
+}
+
+function laravelPayload(v){
+  try{var o=JSON.parse(txt(b64(v)));if(o&&o.iv&&o.value&&(o.mac!==undefined||o.tag!==undefined))return o}catch(e){}
+  return null;
+}
+async function decrypt(o,ks){
+  if(!needSubtle())throw new Error('Browser ini tidak menyediakan WebCrypto (butuh HTTPS atau file lokal).');
+  var kb=/^base64:/.test(ks)?b64(ks.slice(7)):enc.encode(ks);
+  if(kb.length!==16&&kb.length!==32)throw new Error('Panjang APP_KEY harus 16 atau 32 byte (terbaca '+kb.length+').');
+  var iv=b64(o.iv),val=b64(o.value);
+  if(o.tag){
+    var tag=b64(o.tag),c=new Uint8Array(val.length+tag.length);c.set(val);c.set(tag,val.length);
+    var k=await crypto.subtle.importKey('raw',kb,'AES-GCM',false,['decrypt']);
+    try{return txt(new Uint8Array(await crypto.subtle.decrypt({name:'AES-GCM',iv:iv,tagLength:128},k,c)))}
+    catch(e){throw new Error('Dekripsi gagal: APP_KEY salah atau payload diubah.')}
+  }
+  var hk=await crypto.subtle.importKey('raw',kb,{name:'HMAC',hash:'SHA-256'},false,['sign']);
+  var mac=hex(await crypto.subtle.sign('HMAC',hk,enc.encode(o.iv+o.value)));
+  if(mac!==o.mac)throw new Error('MAC tidak cocok: APP_KEY salah atau payload diubah.');
+  var ck=await crypto.subtle.importKey('raw',kb,'AES-CBC',false,['decrypt']);
+  try{return txt(new Uint8Array(await crypto.subtle.decrypt({name:'AES-CBC',iv:iv},ck,val)))}
+  catch(e){throw new Error('Dekripsi gagal (padding tidak valid).')}
+}
+
+async function verify(t,h){
+  var a=String(h.alg||''),p=t.split('.');
+  if(/^none$/i.test(a))return['wn','alg "none": token tidak bertanda tangan, jangan dipercaya.'];
+  var m=a.match(/^(HS|RS|ES)(256|384|512)$/);
+  if(!m)return['wn','Algoritma '+a+' belum didukung untuk verifikasi.'];
+  if(!needSubtle())return['wn','Browser ini tidak menyediakan WebCrypto.'];
+  var hash='SHA-'+m[2],data=enc.encode(p[0]+'.'+p[1]),sig;
+  try{sig=b64(p[2])}catch(e){return['bad','Bagian tanda tangan bukan base64url yang valid.']}
+  try{
+    if(m[1]==='HS'){
+      var sec=$('secret').value;if(!sec)return['wn','Isi secret untuk memverifikasi tanda tangan.'];
+      var kb=$('secb64').checked?b64(sec):enc.encode(sec);
+      var k=await crypto.subtle.importKey('raw',kb,{name:'HMAC',hash:hash},false,['verify']);
+      return await crypto.subtle.verify('HMAC',k,sig,data)?['ok','Tanda tangan valid.']:['bad','Tanda tangan TIDAK valid: secret salah atau token diubah.'];
+    }
+    var pem=$('pem').value;if(!pem.trim())return['wn','Isi public key (PEM) untuk memverifikasi.'];
+    if(/BEGIN RSA PUBLIC KEY|BEGIN CERTIFICATE/.test(pem))return['wn','Format PEM ini belum didukung. Gunakan "BEGIN PUBLIC KEY" (SPKI).'];
+    var der=b64(pem.replace(/-----[^-]+-----/g,''));
+    var rs=m[1]==='RS',ka=rs?{name:'RSASSA-PKCS1-v1_5',hash:hash}:{name:'ECDSA',namedCurve:'P-'+(m[2]==='512'?'521':m[2])};
+    var k2=await crypto.subtle.importKey('spki',der,ka,false,['verify']);
+    var ok=await crypto.subtle.verify(rs?'RSASSA-PKCS1-v1_5':{name:'ECDSA',hash:hash},k2,sig,data);
+    return ok?['ok','Tanda tangan valid.']:['bad','Tanda tangan TIDAK valid: public key salah atau token diubah.'];
+  }catch(e){return['wn','Verifikasi tidak dapat dijalankan: '+e.message]}
+}
+
+async function jwtHtml(t,plainCookie){
+  var p=t.split('.'),h,pl=null,pt;
+  try{h=JSON.parse(txt(b64(p[0])))}catch(e){return line('bad','Bukan JWT valid: header tidak dapat dibaca.')}
+  try{pl=JSON.parse(txt(b64(p[1])));pt=JSON.stringify(pl,null,2)}catch(e){try{pt=txt(b64(p[1]))}catch(e2){pt='(tidak dapat dibaca)'}}
+  var s='<h4>JWT ('+esc(h.alg||'?')+')</h4><h5>Header</h5><pre>'+esc(JSON.stringify(h,null,2))+'</pre><h5>Payload</h5><pre>'+esc(pt)+'</pre>';
+  if(pl&&typeof pl==='object'){
+    var rows=[],now=Date.now();
+    ['iat','nbf','exp','auth_time'].forEach(function(k){if(typeof pl[k]==='number'){var d=new Date(pl[k]*1000);rows.push([k,d.toLocaleString('id-ID')+' | '+d.toISOString()+' | '+rel(d-now)])}});
+    if(rows.length)s+='<h5>Waktu</h5>'+kv(rows);
+    s+=typeof pl.exp==='number'?(pl.exp*1000<now?line('bad','Token sudah kedaluwarsa.'):line('ok','Token belum kedaluwarsa.')):line('wn','Tidak ada klaim exp: token tidak pernah kedaluwarsa.');
+    if(typeof pl.nbf==='number'&&pl.nbf*1000>now)s+=line('wn','Token belum aktif (nbf di masa depan).');
+  }
+  var v=await verify(t,h);
+  s+='<h5>Tanda tangan</h5>'+line(v[0],v[1]);
+  if(plainCookie)s+=line('wn','Cookie ini berisi JWT tanpa enkripsi. Jika dibaca aplikasi Laravel lewat request()->cookie(), middleware EncryptCookies akan gagal mendekripsinya dan nilainya menjadi null, kecuali nama cookie ini dimasukkan ke $except.');
+  return s;
+}
+
+function plainHtml(v){
+  try{var o=JSON.parse(v);if(o&&typeof o==='object')return'<h4>JSON</h4><pre>'+esc(JSON.stringify(o,null,2))+'</pre>'}catch(e){}
+  return'<h4>Teks</h4><pre>'+esc(v)+'</pre>'+line('ok','Panjang '+v.length+' karakter. Bukan JWT dan bukan payload terenkripsi Laravel.');
+}
+
+function attrHtml(it,val){
+  var a=it.attrs,s='<h4>Atribut cookie</h4>',w='';
+  var sm=(a.samesite||'').toLowerCase(),sec='secure' in a,ho='httponly' in a,dom=(a.domain||'').replace(/^\./,'').toLowerCase();
+  var size=it.name.length+it.raw.length;
+  s+=kv([['Domain',a.domain||'(tidak diatur, host-only)'],['Path',a.path||'(tidak diatur)'],['Expires',a.expires||'-'],['Max-Age',a['max-age']||'-'],['SameSite',a.samesite||'(tidak diatur)'],['Secure',sec?'ya':'tidak'],['HttpOnly',ho?'ya':'tidak'],['Ukuran',size+' byte (nama + nilai)']]);
+  if(sm==='none'&&!sec)w+=line('bad','SameSite=None wajib disertai Secure. Browser modern menolak cookie ini.');
+  if(!sm)w+=line('wn','SameSite tidak diatur: browser modern menganggapnya Lax, sehingga cookie tidak ikut request lintas situs (fetch, XHR, iframe, POST dari domain lain).');
+  if(sm==='lax'||sm==='strict')w+=line('wn','SameSite='+a.samesite+': tidak dikirim pada request lintas situs (Lax hanya untuk navigasi GET tingkat atas). Untuk SSO lintas domain gunakan SameSite=None; Secure, atau kirim token lewat redirect.');
+  if(sm==='none'&&sec)w+=line('ok','SameSite=None; Secure: cookie boleh dikirim lintas situs (selama lewat HTTPS).');
+  var ex=a.expires?new Date(a.expires):null;
+  if((ex&&!isNaN(ex)&&ex<new Date())||(a['max-age']!==undefined&&+a['max-age']<=0))w+=line('bad','Cookie sudah kedaluwarsa atau diatur untuk dihapus.');
+  if(/^__Host-/.test(it.name)&&(!sec||a.path!=='/'||a.domain))w+=line('bad','Prefix __Host- mensyaratkan Secure, Path=/, dan tanpa atribut Domain.');
+  if(/^__Secure-/.test(it.name)&&!sec)w+=line('bad','Prefix __Secure- mensyaratkan atribut Secure.');
+  if(size>4096)w+=line('bad','Ukuran melebihi 4096 byte: browser akan menolak cookie ini.');
+  if(val&&JWT_RE.test(val)&&!ho)w+=line('wn','Cookie berisi JWT tanpa HttpOnly: bisa dibaca JavaScript (risiko XSS).');
+  var host=$('host').value.trim().toLowerCase().replace(/^https?:\/\//,'').replace(/[:\/].*$/,'');
+  if(host){
+    if(dom){
+      if(host===dom||host.endsWith('.'+dom))w+=line('ok','Domain cookie mencakup host '+host+'.');
+      else w+=line('bad','Domain cookie ('+dom+') tidak mencakup host '+host+'. Cookie tidak akan dikirim ke host itu. Domain situs yang berbeda tidak bisa berbagi cookie sama sekali.');
+    }else w+=line('wn','Tanpa atribut Domain, cookie hanya dikirim ke host yang menerbitkannya (bukan subdomain lain).');
+  }
+  return s+w;
+}
+
+async function analyze(it){
+  var v=safeDec(it.raw),s='',cur=v,wasEnc=false;
+  var lp=JWT_RE.test(v)?null:laravelPayload(v);
+  if(lp){
+    wasEnc=true;
+    s+='<h4>Cookie terenkripsi Laravel</h4>'+kv([['Mode',lp.tag!==undefined?'AES-GCM':'AES-CBC + HMAC-SHA256'],['IV',lp.iv],['Panjang value',lp.value.length+' karakter']]);
+    var key=$('appkey').value.trim();
+    if(!key){s+=line('wn','Isi APP_KEY untuk mendekripsi cookie ini.');cur=null}
+    else try{cur=await decrypt(lp,key);s+=line('ok','Dekripsi berhasil.')}catch(e){s+=line('bad',e.message);cur=null}
+  }
+  if(cur!=null){
+    var m=cur.match(/^s:\d+:"([\s\S]*)";$/);if(m){cur=m[1];s+=line('ok','Nilai berupa string PHP ter-serialize (dibuka otomatis).')}
+    var pm=cur.match(/^[0-9a-f]{40}\|/);if(pm){cur=cur.slice(pm[0].length);s+=line('ok','Prefix hash cookie Laravel dibuang.')}
+    s+=JWT_RE.test(cur)?await jwtHtml(cur,!wasEnc&&!!it.name):plainHtml(cur);
+  }
+  if(it.attrs)s+=attrHtml(it,cur);
+  else if(it.name)s+='<p class="note">Atribut cookie (Domain, SameSite, Secure) hanya tersedia dari baris Set-Cookie.</p>';
+  return'<section class="card"><h3>'+esc(it.name||'Nilai tanpa nama')+'</h3>'+s+'</section>';
+}
+
+async function run(){
+  var t=$('in').value;
+  if(!t.trim()){$('res').innerHTML='';return}
+  var items=parse(t),h='';
+  for(var i=0;i<items.length;i++){
+    try{h+=await analyze(items[i])}
+    catch(e){h+='<section class="card">'+line('bad','Gagal memproses: '+e.message)+'</section>'}
+  }
+  $('res').innerHTML=h;
+}
+function later(){clearTimeout(tm);tm=setTimeout(run,250)}
+['in','secret','appkey','host','pem','secb64'].forEach(function(id){$(id).addEventListener('input',later)});
+$('secb64').addEventListener('change',later);
+$('run').onclick=run;
+$('clear').onclick=function(){$('in').value='';$('res').innerHTML=''};
+$('sample').onclick=function(){
+  $('in').value='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c';
+  $('secret').value='your-256-bit-secret';$('secb64').checked=false;run();
+};
+})();
+</script>
+</body>
+</html>
