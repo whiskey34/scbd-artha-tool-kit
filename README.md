@@ -1,10 +1,13 @@
 HOW TO ACCESS THOSE TOOLS:
 
-EXCEL TO SQL CONVERTER:
-https://xls2sql.zonegoh.workers.dev
+EXCEL TO SQL CONVERTER:/n
+https://xls2sql.zonegoh.workers.dev /n
 
-CSV TO EXCEL CONVERTER:
-https://csv2xls.zonegoh.workers.dev
+CSV TO EXCEL CONVERTER:/n
+https://csv2xls.zonegoh.workers.dev /n
+
+MAILINATOR GENERATOR: /n
+https://mailinator-generator.zonegoh.workers.dev/ /n
 
 
 
@@ -15,3 +18,5 @@ https://github.com/zonegoh/payroll-indonesia
 
 FAT INDONESIA
 https://github.com/zonegoh/fat-indonesia-skills
+
+
