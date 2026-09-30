@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Generator Email Dummy Mailinator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{--bg:#f3f5f7;--card:#fff;--ink:#16202a;--mute:#5d6b78;--line:#d8dee4;--acc:#0b6e5c;--acc2:#e6f2ef;--err:#b3261e}
+@media(prefers-color-scheme:dark){:root{--bg:#12181e;--card:#1a222a;--ink:#e6ecf1;--mute:#93a1ad;--line:#2c3743;--acc:#4cc2a8;--acc2:#183129;--err:#ff8a80}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+main{max-width:920px;margin:0 auto;padding:24px 16px 48px}
+h1{font-size:1.4rem;margin:0 0 4px}
+p.sub{margin:0 0 20px;color:var(--mute)}
+.tabs{display:flex;gap:4px;margin-bottom:12px}
+.tabs button{flex:1;padding:10px;border:1px solid var(--line);background:var(--card);color:var(--mute);font:inherit;font-weight:600;cursor:pointer;border-radius:8px}
+.tabs button[aria-selected=true]{background:var(--acc);border-color:var(--acc);color:#fff}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:14px}
+label{display:block;font-size:.85rem;font-weight:600;margin-bottom:4px}
+input,select,textarea{width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink);font:inherit}
+textarea{resize:vertical;font-family:ui-monospace,Consolas,monospace;font-size:.85rem}
+input[type=checkbox]{width:auto;margin-right:6px}
+.chk{display:flex;align-items:center;font-weight:400;margin:0}
+button.act{padding:9px 16px;border:0;border-radius:6px;background:var(--acc);color:#fff;font:inherit;font-weight:600;cursor:pointer}
+button.act:disabled{opacity:.45;cursor:not-allowed}
+button.sec{padding:9px 16px;border:1px solid var(--line);border-radius:6px;background:transparent;color:var(--ink);font:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.result{margin-top:14px;padding:12px;background:var(--acc2);border-radius:8px;word-break:break-all;font-family:ui-monospace,Consolas,monospace}
+.hint{color:var(--mute);font-size:.85rem;margin-top:8px}
+.msg{margin-top:10px;font-size:.9rem}.msg.err{color:var(--err)}
+.tw{overflow-x:auto;margin-top:14px;border:1px solid var(--line);border-radius:8px;max-height:360px}
+table{border-collapse:collapse;width:100%;font-size:.85rem}
+th,td{padding:6px 10px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+th{position:sticky;top:0;background:var(--card)}
+td.gen{background:var(--acc2);font-family:ui-monospace,Consolas,monospace}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+<h1>Generator Email Dummy Mailinator</h1>
+<p class="sub">Buat satu email dummy, atau isi kolom email di file Excel otomatis dari kolom nama.</p>
+
+<div class="tabs" role="tablist">
+  <button role="tab" id="tab-single" aria-selected="true">Satu email</button>
+  <button role="tab" id="tab-excel" aria-selected="false">Dari Excel</button>
+  <button role="tab" id="tab-sheets" aria-selected="false">Google Sheets</button>
+</div>
+
+<!-- Opsi bersama -->
+<section class="card" style="margin-bottom:12px">
+  <div class="grid" style="margin:0">
+    <div><label for="domain">Domain</label><input id="domain" value="mailinator.com"></div>
+    <div><label for="sep">Pemisah nama</label>
+      <select id="sep"><option value=".">titik (john.doe)</option><option value="_">underscore (john_doe)</option><option value="">tanpa pemisah (johndoe)</option></select></div>
+    <div><label for="digits">Angka acak di belakang</label>
+      <select id="digits"><option value="0">Tidak ada</option><option value="2">2 digit</option><option value="3" selected>3 digit</option><option value="4">4 digit</option></select></div>
+  </div>
+</section>
+
+<!-- SINGLE -->
+<section class="card" id="p-single">
+  <div class="grid">
+    <div><label for="sname">Nama (opsional)</label><input id="sname" placeholder="mis. Budi Santoso"></div>
+  </div>
+  <div class="row"><button class="act" id="sgen">Generate</button></div>
+  <div id="sres" hidden>
+    <div class="result" id="semail"></div>
+    <div class="row" style="margin-top:8px">
+      <button class="sec" id="scopy">Salin</button>
+      <button class="sec" id="sopen">Buka inbox</button>
+    </div>
+  </div>
+  <p class="hint">Kosongkan nama untuk email acak. Inbox Mailinator publik: siapa pun yang tahu alamatnya bisa membacanya, jadi jangan dipakai untuk data sensitif.</p>
+</section>
+
+<!-- EXCEL -->
+<section class="card" id="p-excel" hidden>
+  <div class="grid">
+    <div><label for="file">File Excel / CSV</label><input id="file" type="file" accept=".xlsx,.xls,.csv"></div>
+    <div><label for="sheet">Sheet</label><select id="sheet" disabled></select></div>
+    <div><label for="hrow">Baris header</label><input id="hrow" type="number" min="1" value="1"></div>
+  </div>
+  <div class="grid">
+    <div><label for="ncol">Kolom nama (sumber)</label><select id="ncol" disabled></select></div>
+    <div><label for="ecol">Kolom email (tujuan)</label><select id="ecol" disabled></select></div>
+  </div>
+  <div class="grid">
+    <label class="chk"><input type="checkbox" id="onlyEmpty" checked>Hanya isi sel email yang kosong</label>
+  </div>
+  <div class="row">
+    <button class="act" id="xgen" disabled>Generate email</button>
+    <button class="act" id="xdl" disabled>Unduh .xlsx</button>
+  </div>
+  <div class="msg" id="xmsg" aria-live="polite"></div>
+  <div class="tw" id="xprev" hidden></div>
+  <p class="hint">Hanya nilai sel yang disimpan; format (warna, lebar kolom, formula) tidak ikut terbawa ke file hasil. Email dijamin unik dalam satu file.</p>
+</section>
+
+<!-- GOOGLE SHEETS (salin-tempel) -->
+<section class="card" id="p-sheets" hidden>
+  <label for="gpaste">Tempel data dari Google Sheets (blok tabel termasuk baris header, lalu Ctrl+C)</label>
+  <textarea id="gpaste" rows="6" placeholder="Tempel di sini..."></textarea>
+  <div class="grid" style="margin-top:12px">
+    <div><label for="gncol">Kolom nama (sumber)</label><select id="gncol" disabled></select></div>
+    <div><label for="gecol">Kolom email (tujuan)</label><select id="gecol" disabled></select></div>
+  </div>
+  <div class="grid">
+    <label class="chk"><input type="checkbox" id="gonly" checked>Hanya isi sel email yang kosong</label>
+  </div>
+  <div class="row">
+    <button class="act" id="ggen" disabled>Generate email</button>
+    <button class="sec" id="gcopycol" disabled>Salin kolom email</button>
+    <button class="sec" id="gcopyall" disabled>Salin seluruh tabel</button>
+  </div>
+  <div class="msg" id="gmsg" aria-live="polite"></div>
+  <div class="tw" id="gprev" hidden></div>
+  <p class="hint">Untuk menempel balik: klik sel pertama di bawah header kolom email, lalu Ctrl+V dengan "Salin kolom email". Atau tempel "Salin seluruh tabel" mulai dari sel A1 untuk mengganti seluruh tabel. Semua diproses di browser Anda.</p>
+</section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+
+/* ---------- Tab ---------- */
+function showTab(t){
+  ['single', 'excel', 'sheets'].forEach(k => {
+    $('p-' + k).hidden = k !== t;
+    $('tab-' + k).setAttribute('aria-selected', k === t);
+  });
+}
+$('tab-single').onclick = () => showTab('single');
+$('tab-excel').onclick = () => showTab('excel');
+$('tab-sheets').onclick = () => showTab('sheets');
+
+/* ---------- Generator inti ---------- */
+function slug(str, sep){
+  return String(str || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')   // buang aksen
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ').trim()
+    .split(' ').filter(Boolean).join(sep);
+}
+function rnd(n){
+  let s = ''; for (let i = 0; i < n; i++) s += Math.floor(Math.random() * 10);
+  return s;
+}
+function opts(){
+  return {
+    domain: ($('domain').value.trim().replace(/^@/, '')) || 'mailinator.com',
+    sep: $('sep').value,
+    digits: parseInt($('digits').value, 10)
+  };
+}
+// used = Set alamat yang sudah dipakai, supaya tidak ada duplikat
+function makeEmail(name, o, used, fallbackIdx){
+  let base = slug(name, o.sep) || ('user' + (fallbackIdx || rnd(4)));
+  let addr, tries = 0;
+  do {
+    let suffix = o.digits ? rnd(o.digits) : '';
+    if (tries > 20) suffix = rnd(o.digits + 2);            // ruang kombinasi habis → lebarkan
+    if (!o.digits && tries > 0) suffix = String(tries + 1); // tanpa angka acak → counter
+    addr = base + suffix + '@' + o.domain;
+    tries++;
+  } while (used.has(addr));
+  used.add(addr);
+  return addr;
+}
+
+/* ---------- Single ---------- */
+let lastSingle = '';
+$('sgen').onclick = () => {
+  const o = opts();
+  lastSingle = makeEmail($('sname').value, o, new Set());
+  $('semail').textContent = lastSingle;
+  $('sres').hidden = false;
+};
+$('scopy').onclick = async () => {
+  try { await navigator.clipboard.writeText(lastSingle); $('scopy').textContent = 'Tersalin'; }
+  catch { $('scopy').textContent = 'Gagal menyalin'; }
+  setTimeout(() => $('scopy').textContent = 'Salin', 1500);
+};
+$('sopen').onclick = () => {
+  const local = lastSingle.split('@')[0];
+  window.open('https://www.mailinator.com/v4/public/inboxes.jsp?to=' + encodeURIComponent(local), '_blank', 'noopener');
+};
+
+/* ---------- Excel ---------- */
+let wb = null, data = [], headerIdx = 0, genCol = -1, genRows = new Set();
+
+function msg(t, err){ const m = $('xmsg'); m.textContent = t; m.className = 'msg' + (err ? ' err' : ''); }
+
+$('file').onchange = async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try {
+    wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+  } catch (err) { msg('File tidak bisa dibaca: ' + err.message, true); return; }
+  const sh = $('sheet');
+  sh.innerHTML = wb.SheetNames.map(n => `<option>${n.replace(/</g,'&lt;')}</option>`).join('');
+  sh.disabled = false;
+  loadSheet();
+};
+$('sheet').onchange = loadSheet;
+$('hrow').onchange = loadSheet;
+
+function loadSheet(){
+  genCol = -1; genRows = new Set(); $('xdl').disabled = true;
+  data = XLSX.utils.sheet_to_json(wb.Sheets[$('sheet').value], { header: 1, defval: '', raw: false });
+  headerIdx = Math.max(1, parseInt($('hrow').value, 10) || 1) - 1;
+  const head = (data[headerIdx] || []).map(String);
+  if (!head.length) { msg('Baris header kosong. Ubah nomor baris header.', true); return; }
+
+  const optHtml = head.map((h, i) => `<option value="${i}">${(h || '(kolom ' + (i + 1) + ')').replace(/</g,'&lt;')}</option>`).join('');
+  $('ncol').innerHTML = optHtml;
+  $('ecol').innerHTML = optHtml + '<option value="new">+ Buat kolom "email" baru</option>';
+  $('ncol').disabled = $('ecol').disabled = false;
+
+  const low = head.map(h => h.toLowerCase().trim());
+  let n = low.findIndex(h => /^(full\s*name|nama\s*lengkap)$/.test(h));
+  if (n < 0) n = low.findIndex(h => /(name|nama)/.test(h));
+  $('ncol').value = n >= 0 ? n : 0;
+  const em = low.findIndex(h => /e-?mail/.test(h));
+  $('ecol').value = em >= 0 ? em : 'new';
+
+  $('xgen').disabled = false;
+  const rows = Math.max(0, data.length - headerIdx - 1);
+  msg(`${rows} baris data terdeteksi. Periksa pilihan kolom, lalu klik Generate.`);
+  renderPreview();
+}
+
+$('xgen').onclick = () => {
+  const o = opts();
+  const nCol = parseInt($('ncol').value, 10);
+  const head = data[headerIdx];
+  let eCol = $('ecol').value === 'new' ? -1 : parseInt($('ecol').value, 10);
+  if (eCol === -1) { eCol = head.length; head.push('email'); }
+  if (eCol === nCol) { msg('Kolom nama dan kolom email tidak boleh sama.', true); return; }
+
+  const onlyEmpty = $('onlyEmpty').checked;
+  const used = new Set();
+  // daftarkan email yang sudah ada dulu agar hasil baru tidak bentrok
+  for (let r = headerIdx + 1; r < data.length; r++) {
+    const v = String((data[r] || [])[eCol] || '').trim().toLowerCase();
+    if (v) used.add(v);
+  }
+  genRows = new Set(); let count = 0, skipped = 0;
+  for (let r = headerIdx + 1; r < data.length; r++) {
+    const row = data[r] = data[r] || [];
+    while (row.length <= eCol) row.push('');
+    const isBlankRow = row.every(c => String(c).trim() === '');
+    if (isBlankRow) continue;
+    if (onlyEmpty && String(row[eCol]).trim() !== '') { skipped++; continue; }
+    row[eCol] = makeEmail(row[nCol], o, used, r - headerIdx);
+    genRows.add(r); count++;
+  }
+  genCol = eCol;
+  $('xdl').disabled = false;
+  msg(`Selesai: ${count} email dibuat` + (skipped ? `, ${skipped} baris dilewati karena email sudah terisi.` : '.'));
+  renderPreview();
+};
+
+function renderPreview(){
+  const head = data[headerIdx] || [];
+  const body = data.slice(headerIdx + 1, headerIdx + 21);
+  const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+  let h = '<table><thead><tr>' + head.map(x => `<th>${esc(x)}</th>`).join('') + '</tr></thead><tbody>';
+  body.forEach((row, i) => {
+    const r = headerIdx + 1 + i;
+    h += '<tr>' + head.map((_, c) => `<td class="${c === genCol && genRows.has(r) ? 'gen' : ''}">${esc(row[c] ?? '')}</td>`).join('') + '</tr>';
+  });
+  $('xprev').innerHTML = h + '</tbody></table>';
+  $('xprev').hidden = false;
+}
+
+$('xdl').onclick = () => {
+  const name = $('sheet').value;
+  wb.Sheets[name] = XLSX.utils.aoa_to_sheet(data);
+  const base = ($('file').files[0].name || 'data').replace(/\.[^.]+$/, '');
+  XLSX.writeFile(wb, base + '_with-email.xlsx');
+};
+
+/* ---------- Google Sheets (salin-tempel) ---------- */
+let gdata = [], gGenCol = -1, gRows = new Set();
+
+// Parser TSV: menangani sel ber-kutip yang berisi tab / baris baru (format salinan Google Sheets)
+function parseTSV(t){
+  const rows = []; let row = [], cell = '', q = false;
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (q) {
+      if (c === '"') { if (t[i + 1] === '"') { cell += '"'; i++; } else q = false; }
+      else cell += c;
+    }
+    else if (c === '"' && cell === '') q = true;
+    else if (c === '\t') { row.push(cell); cell = ''; }
+    else if (c === '\n' || c === '\r') {
+      if (c === '\r' && t[i + 1] === '\n') i++;
+      row.push(cell); rows.push(row); row = []; cell = '';
+    }
+    else cell += c;
+  }
+  if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+  return rows;
+}
+function toTSV(rows){
+  const q = v => /[\t\n\r"]/.test(v) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v);
+  return rows.map(r => r.map(q).join('\t')).join('\n');
+}
+function gmsg(t, err){ const m = $('gmsg'); m.textContent = t; m.className = 'msg' + (err ? ' err' : ''); }
+function gButtons(hasResult){
+  $('ggen').disabled = !gdata.length;
+  $('gcopycol').disabled = $('gcopyall').disabled = !hasResult;
+}
+
+$('gpaste').oninput = () => {
+  gGenCol = -1; gRows = new Set(); gButtons(false);
+  gdata = parseTSV($('gpaste').value);
+  if (gdata.length < 2) {
+    gdata = []; gButtons(false); $('gprev').hidden = true;
+    $('gncol').disabled = $('gecol').disabled = true;
+    gmsg($('gpaste').value.trim() ? 'Data belum terbaca. Pastikan yang ditempel berisi header dan minimal satu baris data.' : '', !!$('gpaste').value.trim());
+    return;
+  }
+  const head = gdata[0].map(String);
+  const optHtml = head.map((h, i) => `<option value="${i}">${(h || '(kolom ' + (i + 1) + ')').replace(/</g, '&lt;')}</option>`).join('');
+  $('gncol').innerHTML = optHtml;
+  $('gecol').innerHTML = optHtml + '<option value="new">+ Buat kolom "email" baru</option>';
+  $('gncol').disabled = $('gecol').disabled = false;
+
+  const low = head.map(h => h.toLowerCase().trim());
+  let n = low.findIndex(h => /^(full\s*name|nama\s*lengkap)$/.test(h));
+  if (n < 0) n = low.findIndex(h => /(name|nama)/.test(h));
+  $('gncol').value = n >= 0 ? n : 0;
+  const em = low.findIndex(h => /e-?mail/.test(h));
+  $('gecol').value = em >= 0 ? em : 'new';
+
+  gButtons(false);
+  gmsg(`${gdata.length - 1} baris data terdeteksi. Periksa pilihan kolom, lalu klik Generate.`);
+  gPreview();
+};
+
+$('ggen').onclick = () => {
+  const o = opts();
+  const nCol = parseInt($('gncol').value, 10);
+  const head = gdata[0];
+  let eCol = $('gecol').value === 'new' ? -1 : parseInt($('gecol').value, 10);
+  if (eCol === -1) { eCol = head.length; head.push('email'); }
+  if (eCol === nCol) { gmsg('Kolom nama dan kolom email tidak boleh sama.', true); return; }
+
+  const only = $('gonly').checked;
+  const used = new Set();
+  for (let r = 1; r < gdata.length; r++) {
+    const v = String(gdata[r][eCol] || '').trim().toLowerCase();
+    if (v) used.add(v);
+  }
+  gRows = new Set(); let count = 0, skipped = 0;
+  for (let r = 1; r < gdata.length; r++) {
+    const row = gdata[r];
+    while (row.length < head.length) row.push('');
+    if (row.every(c => String(c).trim() === '')) continue;
+    if (only && String(row[eCol]).trim() !== '') { skipped++; continue; }
+    row[eCol] = makeEmail(row[nCol], o, used, r);
+    gRows.add(r); count++;
+  }
+  gGenCol = eCol;
+  gButtons(true);
+  gmsg(`Selesai: ${count} email dibuat` + (skipped ? `, ${skipped} baris dilewati karena email sudah terisi.` : '.') + ' Klik "Salin kolom email" lalu tempel di Sheet.');
+  gPreview();
+};
+
+function gPreview(){
+  const head = gdata[0] || [];
+  const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  let h = '<table><thead><tr>' + head.map(x => `<th>${esc(x)}</th>`).join('') + '</tr></thead><tbody>';
+  gdata.slice(1, 21).forEach((row, i) => {
+    h += '<tr>' + head.map((_, c) => `<td class="${c === gGenCol && gRows.has(i + 1) ? 'gen' : ''}">${esc(row[c] ?? '')}</td>`).join('') + '</tr>';
+  });
+  $('gprev').innerHTML = h + '</tbody></table>';
+  $('gprev').hidden = false;
+}
+
+async function gCopy(btn, text){
+  const label = btn.textContent;
+  try { await navigator.clipboard.writeText(text); btn.textContent = 'Tersalin'; }
+  catch { btn.textContent = 'Gagal menyalin'; }
+  setTimeout(() => btn.textContent = label, 1500);
+}
+// Kolom email tanpa header: satu nilai per baris, urutan sama dengan baris data → sejajar saat ditempel
+$('gcopycol').onclick = e => gCopy(e.target, gdata.slice(1).map(r => String(r[gGenCol] ?? '')).join('\n'));
+$('gcopyall').onclick = e => gCopy(e.target, toTSV(gdata));
+</script>
+</body>
+</html>
