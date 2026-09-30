@@ -1,13 +1,13 @@
 HOW TO ACCESS THOSE TOOLS:
 
-EXCEL TO SQL CONVERTER:/n
-https://xls2sql.zonegoh.workers.dev /n
+EXCEL TO SQL CONVERTER:/&nbsp;
+https://xls2sql.zonegoh.workers.dev /&nbsp;
 
-CSV TO EXCEL CONVERTER:/n
-https://csv2xls.zonegoh.workers.dev /n
+CSV TO EXCEL CONVERTER:/&nbsp;
+https://csv2xls.zonegoh.workers.dev /&nbsp;
 
-MAILINATOR GENERATOR: /n
-https://mailinator-generator.zonegoh.workers.dev/ /n
+MAILINATOR GENERATOR: /&nbsp;
+https://mailinator-generator.zonegoh.workers.dev/ /&nbsp;
 
 
 
