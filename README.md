@@ -6,6 +6,10 @@ https://xls2sql.zonegoh.workers.dev
 CSV TO EXCEL CONVERTER:
 https://csv2xls.zonegoh.workers.dev
 
+
+
+SKILLS FOR AI (STILL DEVELOPMENT):
+
 PAYROLL INDONESIA SKILLS
 https://github.com/zonegoh/payroll-indonesia
 
